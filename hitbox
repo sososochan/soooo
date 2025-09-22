@@ -1,0 +1,127 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+
+local ATTACK_RANGE = 60
+local ATTACK_INTERVAL = 0.1
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 200, 0, 100)
+frame.Position = UDim2.new(0.5, -100, 0.5, -50)
+frame.Parent = screenGui
+
+local inputBox = Instance.new("TextBox")
+inputBox.Size = UDim2.new(0, 180, 0, 30)
+inputBox.Position = UDim2.new(0, 10, 0, 10)
+inputBox.PlaceholderText = "Enter Attack Range"
+inputBox.Text = tostring(ATTACK_RANGE)
+inputBox.Parent = frame
+
+local updateButton = Instance.new("TextButton")
+updateButton.Size = UDim2.new(0, 180, 0, 30)
+updateButton.Position = UDim2.new(0, 10, 0, 50)
+updateButton.Text = "Update Range"
+updateButton.Parent = frame
+
+updateButton.MouseButton1Click:Connect(function()
+    local inputValue = tonumber(inputBox.Text)
+    if inputValue and inputValue > 0 then
+        ATTACK_RANGE = inputValue
+        print("Attack Range updated to: " .. ATTACK_RANGE)
+    else
+        print("Invalid input. Please enter a valid number.")
+    end
+end)
+
+local function GetNearbyPlayers(character, range)
+    local targets = {}
+    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return targets end
+
+    for _, other in ipairs(Players:GetPlayers()) do
+        if other ~= player and other.Character and other.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (other.Character.HumanoidRootPart.Position - myRoot.Position).Magnitude
+            if dist <= range then
+                table.insert(targets, other.Character)
+            end
+        end
+    end
+    return targets
+end
+
+local function AttackPlayer(targetCharacter)
+    local character = player.Character
+    if not character then return end
+
+    local equippedWeapon
+    for _, item in ipairs(character:GetChildren()) do
+        if item:IsA("Tool") then
+            equippedWeapon = item
+            break
+        end
+    end
+    if not equippedWeapon then return end
+
+    if equippedWeapon:FindFirstChild("LeftClickRemote") then
+        local root = targetCharacter:FindFirstChild("HumanoidRootPart")
+        if root then
+            local direction = (root.Position - character:GetPivot().Position).Unit
+            pcall(function()
+                equippedWeapon.LeftClickRemote:FireServer(direction, 1)
+            end)
+        end
+    else
+        local head = targetCharacter:FindFirstChild("Head")
+        if head then
+            local attackEvent = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net"):WaitForChild("RE/RegisterAttack")
+            local hitEvent = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net"):WaitForChild("RE/RegisterHit")
+            pcall(function()
+                attackEvent:FireServer(0.1)
+                hitEvent:FireServer(head, { {targetCharacter, head} })
+            end)
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        local character = player.Character
+        if character then
+            local enemies = GetNearbyPlayers(character, ATTACK_RANGE)
+            for _, enemyChar in ipairs(enemies) do
+                AttackPlayer(enemyChar)
+            end
+        end
+        task.wait(ATTACK_INTERVAL)
+    end
+end)
+
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragInput = input
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+end)
+
+frame.InputChanged:Connect(function(input)
+    if dragging and input == dragInput then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+frame.InputEnded:Connect(function(input)
+    if input == dragInput then
+        dragging = false
+    end
+end)
